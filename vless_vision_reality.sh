@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # =========================
-# 老王sing-box Reality专用安装脚本
-# vless-version-reality
+# vless-reality 安装脚本
 # 最后更新时间: 2025.10.15
 # =========================
 
 export LANG=en_US.UTF-8
+
 # 定义颜色
 re="\033[0m"
 red="\033[1;91m"
@@ -204,10 +204,11 @@ install_singbox() {
 
     # 下载sing-box
     [ ! -d "${work_dir}" ] && mkdir -p "${work_dir}" && chmod 777 "${work_dir}"
+    curl -sLo "${work_dir}/qrencode" "https://$ARCH.ssss.nyc.mn/qrencode"
     curl -sLo "${work_dir}/sing-box" "https://$ARCH.ssss.nyc.mn/sbx"
-    chown root:root ${work_dir} && chmod +x ${work_dir}/${server_name}
+    chown root:root ${work_dir} && chmod +x ${work_dir}/${server_name} ${work_dir}/qrencode
 
-    # 生成随机密码和密钥
+    # 生成随机UUID和密钥
     uuid=$(cat /proc/sys/kernel/random/uuid)
     output=$(/etc/sing-box/sing-box generate reality-keypair)
     private_key=$(echo "${output}" | awk '/PrivateKey:/ {print $2}')
@@ -215,11 +216,11 @@ install_singbox() {
 
     # 放行端口
     allow_port $vless_port/tcp > /dev/null 2>&1
-    
+
     # 检测网络类型并设置DNS策略
     dns_strategy=$(ping -c 1 -W 3 8.8.8.8 >/dev/null 2>&1 && echo "prefer_ipv4" || (ping -c 1 -W 3 2001:4860:4860::8888 >/dev/null 2>&1 && echo "prefer_ipv6" || echo "prefer_ipv4"))
 
-   # 生成配置文件
+    # 生成配置文件
 cat > "${config_dir}" << EOF
 {
   "log": {
@@ -257,11 +258,11 @@ cat > "${config_dir}" << EOF
       ],
       "tls": {
         "enabled": true,
-        "server_name": "www.iij.ad.jp",
+        "server_name": "apps.apple.com",
         "reality": {
           "enabled": true,
           "handshake": {
-            "server": "www.iij.ad.jp",
+            "server": "apps.apple.com",
             "server_port": 443
           },
           "private_key": "$private_key",
@@ -278,47 +279,8 @@ cat > "${config_dir}" << EOF
     {
       "type": "block",
       "tag": "block"
-    },
-    {
-      "type": "wireguard",
-      "tag": "wireguard-out",
-      "server": "engage.cloudflareclient.com",
-      "server_port": 2408,
-      "local_address": [
-        "172.16.0.2/32",
-        "2606:4700:110:851f:4da3:4e2c:cdbf:2ecf/128"
-      ],
-      "private_key": "eAx8o6MJrH4KE7ivPFFCa4qvYw5nJsYHCBQXPApQX1A=",
-      "peer_public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
-      "reserved": [82, 90, 51],
-      "mtu": 1420
     }
-  ],
-  "route": {
-    "rule_set": [
-      {
-        "tag": "openai",
-        "type": "remote",
-        "format": "binary",
-        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo-lite/geosite/openai.srs",
-        "download_detour": "direct"
-      },
-      {
-        "tag": "netflix",
-        "type": "remote",
-        "format": "binary",
-        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo-lite/geosite/netflix.srs",
-        "download_detour": "direct"
-      }
-    ],
-    "rules": [
-      {
-        "rule_set": ["openai", "netflix"],
-        "outbound": "wireguard-out"
-      }
-    ],
-    "final": "direct"
-  }
+  ]
 }
 EOF
 }
@@ -345,6 +307,7 @@ LimitNOFILE=infinity
 [Install]
 WantedBy=multi-user.target
 EOF
+
     if [ -f /etc/centos-release ]; then
         yum install -y chrony
         systemctl start chronyd
@@ -374,20 +337,21 @@ EOF
     rc-update add sing-box default > /dev/null 2>&1
 }
 
-# 生成节点链接
+# 生成节点信息
 get_info() {  
-  yellow "\nip检测中,请稍等...\n"
-  server_ip=$(get_realip)
-  clear
-  isp=$(curl -s --max-time 2 https://speed.cloudflare.com/meta | awk -F\" '{print $26"-"$18}' | sed -e 's/ /_/g' || echo "vps")
+    yellow "\nip检测中,请稍等...\n"
+    server_ip=$(get_realip)
+    clear
+    isp=$(curl -s --max-time 2 https://speed.cloudflare.com/meta | awk -F\" '{print $26"-"$18}' | sed -e 's/ /_/g' || echo "vps")
 
-  cat > ${work_dir}/url.txt <<EOF
+    cat > ${work_dir}/url.txt <<EOF
 vless://${uuid}@${server_ip}:${vless_port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.iij.ad.jp&fp=chrome&pbk=${public_key}&type=tcp&headerType=none#${isp}
 EOF
 
-  green "======== VLESS-Reality 节点信息 ========"
-  purple "\n$(cat ${work_dir}/url.txt)\n"
-  green "========================================"
+    echo ""
+    while IFS= read -r line; do echo -e "${purple}$line"; done < ${work_dir}/url.txt
+    $work_dir/qrencode "$(cat ${work_dir}/url.txt)"
+    yellow "\n温馨提醒：需打开V2rayN或其他软件里的 "跳过证书验证"，或将节点的Insecure或TLS里设置为"true"\n"
 }
 
 # 通用服务管理函数
@@ -403,38 +367,80 @@ manage_service() {
     local status=$(check_service "$service_name" 2>/dev/null)
 
     case "$action" in
-        "start" | "stop" | "restart")
+        "start")
+            if [ "$status" == "running" ]; then 
+                yellow "${service_name} 正在运行\n"
+                return 0
+            elif [ "$status" == "not installed" ]; then 
+                yellow "${service_name} 尚未安装!\n"
+                return 1
+            else 
+                yellow "正在启动 ${service_name} 服务\n"
+                if command_exists rc-service; then
+                    rc-service "$service_name" start
+                elif command_exists systemctl; then
+                    systemctl daemon-reload
+                    systemctl start "$service_name"
+                fi
+                
+                if [ $? -eq 0 ]; then
+                    green "${service_name} 服务已成功启动\n"
+                    return 0
+                else
+                    red "${service_name} 服务启动失败\n"
+                    return 1
+                fi
+            fi
+            ;;
+            
+        "stop")
+            if [ "$status" == "not installed" ]; then 
+                yellow "${service_name} 尚未安装！\n"
+                return 2
+            elif [ "$status" == "not running" ]; then
+                yellow "${service_name} 未运行\n"
+                return 1
+            else
+                yellow "正在停止 ${service_name} 服务\n"
+                if command_exists rc-service; then
+                    rc-service "$service_name" stop
+                elif command_exists systemctl; then
+                    systemctl stop "$service_name"
+                fi
+                
+                if [ $? -eq 0 ]; then
+                    green "${service_name} 服务已成功停止\n"
+                    return 0
+                else
+                    red "${service_name} 服务停止失败\n"
+                    return 1
+                fi
+            fi
+            ;;
+            
+        "restart")
             if [ "$status" == "not installed" ]; then
                 yellow "${service_name} 尚未安装！\n"
                 return 1
-            fi
-
-            if [ "$action" == "start" ] && [ "$status" == "running" ]; then
-                yellow "${service_name} 正在运行\n"
-                return 0
-            fi
-
-            if [ "$action" == "stop" ] && [ "$status" != "running" ]; then
-                yellow "${service_name} 未运行\n"
-                return 1
-            fi
-
-            yellow "正在 ${action} ${service_name} 服务\n"
-            if command_exists rc-service; then
-                rc-service "$service_name" "$action"
-            elif command_exists systemctl; then
-                systemctl daemon-reload
-                systemctl "$action" "$service_name"
-            fi
-            
-            if [ $? -eq 0 ]; then
-                green "${service_name} 服务操作成功\n"
-                return 0
             else
-                red "${service_name} 服务操作失败\n"
-                return 1
+                yellow "正在重启 ${service_name} 服务\n"
+                if command_exists rc-service; then
+                    rc-service "$service_name" restart
+                elif command_exists systemctl; then
+                    systemctl daemon-reload
+                    systemctl restart "$service_name"
+                fi
+                
+                if [ $? -eq 0 ]; then
+                    green "${service_name} 服务已成功重启\n"
+                    return 0
+                else
+                    red "${service_name} 服务重启失败\n"
+                    return 1
+                fi
             fi
             ;;
+            
         *)
             red "无效的操作: $action\n"
             red "可用操作: start, stop, restart\n"
@@ -460,46 +466,46 @@ restart_singbox() {
 
 # 卸载 sing-box
 uninstall_singbox() {
-   reading "确定要卸载 sing-box 吗? (y/n): " choice
-   case "${choice}" in
-       y|Y)
-           yellow "正在卸载 sing-box"
-           if command_exists rc-service; then
+    reading "确定要卸载 sing-box 吗? (y/n): " choice
+    case "${choice}" in
+        y|Y)
+            yellow "正在卸载 sing-box"
+            if command_exists rc-service; then
                 rc-service sing-box stop
                 rm /etc/init.d/sing-box
                 rc-update del sing-box default
-           else
+            else
                 systemctl stop "${server_name}"
                 systemctl disable "${server_name}"
                 systemctl daemon-reload || true
             fi
-           rm -rf "${work_dir}" || true
-           rm -rf /etc/systemd/system/sing-box.service > /dev/null 2>&1
-           green "\nsing-box 卸载成功\n\n" && exit 0
-           ;;
-       *)
-           purple "已取消卸载操作\n\n"
-           ;;
-   esac
+            rm -rf "${work_dir}" || true
+            rm -rf /etc/systemd/system/sing-box.service > /dev/null 2>&1
+            
+            green "\nsing-box 卸载成功\n\n" && exit 0
+            ;;
+        *)
+            purple "已取消卸载操作\n\n"
+            ;;
+    esac
 }
 
 # 创建快捷指令
 create_shortcut() {
-  cat > "$work_dir/sb.sh" << EOF
+    cat > "$work_dir/sb.sh" << 'EOF'
 #!/usr/bin/env bash
-
-bash <(curl -Ls https://raw.githubusercontent.com/eooce/sing-box/main/sing-box.sh) \$1
+bash <(curl -Ls https://raw.githubusercontent.com/yourusername/vless-reality/main/vless-reality.sh) $1
 EOF
-  chmod +x "$work_dir/sb.sh"
-  ln -sf "$work_dir/sb.sh" /usr/bin/sb
-  if [ -s /usr/bin/sb ]; then
-    green "\n快捷指令 sb 创建成功\n"
-  else
-    red "\n快捷指令创建失败\n"
-  fi
+    chmod +x "$work_dir/sb.sh"
+    ln -sf "$work_dir/sb.sh" /usr/bin/sb
+    if [ -s /usr/bin/sb ]; then
+        green "\n快捷指令 sb 创建成功\n"
+    else
+        red "\n快捷指令创建失败\n"
+    fi
 }
 
-# 适配alpine运行报错用户组和dns的问题
+# 适配alpine运行的问题
 change_hosts() {
     sh -c 'echo "0 0" > /proc/sys/net/ipv4/ping_group_range'
     sed -i '1s/.*/127.0.0.1   localhost/' /etc/hosts
@@ -520,43 +526,163 @@ change_config() {
     
     clear
     echo ""
-    green "=== 修改 Reality 节点配置 ===\n"
+    green "=== 修改节点配置 ===\n"
     green "sing-box当前状态: $singbox_status\n"
     green "1. 修改端口"
     skyblue "------------"
     green "2. 修改UUID"
     skyblue "------------"
-    green "3. 修改Reality伪装域名(SNI)"
+    green "3. 修改Reality伪装域名"
     skyblue "------------"
     purple "0. 返回主菜单"
     skyblue "------------"
     reading "请输入选择: " choice
     case "${choice}" in
         1)
-            reading "\n请输入新的vless-reality端口 (回车跳过将使用随机端口): " new_port
+            reading "\n请输入vless-reality端口 (回车跳过将使用随机端口): " new_port
             [ -z "$new_port" ] && new_port=$(shuf -i 2000-65000 -n 1)
-            jq --argjson new_port "$new_port" '
-            (.inbounds[] | select(.tag == "vless-reality")).listen_port = $new_port
-            ' "$config_dir" > "$config_dir.tmp" && mv "$config_dir.tmp" "$config_dir"
+            sed -i '/"type": "vless"/,/listen_port/ s/"listen_port": [0-9]\+/"listen_port": '"$new_port"'/' $config_dir
             restart_singbox
             allow_port $new_port/tcp > /dev/null 2>&1
             sed -i 's/\(vless:\/\/[^@]*@[^:]*:\)[0-9]\{1,\}/\1'"$new_port"'/' $client_dir
-            green "\nvless-reality端口已修改为：${purple}$new_port${re}\n"
-            check_nodes
+            while IFS= read -r line; do yellow "$line"; done < ${work_dir}/url.txt
+            green "\nvless-reality端口已修改成：${purple}$new_port${re} ${green}请手动更改节点端口${re}\n"
             ;;
         2)
-            reading "\n请输入新的UUID (回车跳过将使用随机UUID): " new_uuid
+            reading "\n请输入新的UUID: " new_uuid
             [ -z "$new_uuid" ] && new_uuid=$(cat /proc/sys/kernel/random/uuid)
-            jq --arg new_uuid "$new_uuid" '
-            (.inbounds[] | select(.tag == "vless-reality")).users[0].uuid = $new_uuid
-            ' "$config_dir" > "$config_dir.tmp" && mv "$config_dir.tmp" "$config_dir"
+            sed -i -E 's/"uuid": "([a-f0-9-]+)"/"uuid": "'"$new_uuid"'"/g' $config_dir
             restart_singbox
             sed -i -E 's/(vless:\/\/)[^@]*(@.*)/\1'"$new_uuid"'\2/' $client_dir
-            green "\nUUID已修改为：${purple}${new_uuid}${re}\n"
-            check_nodes
+            while IFS= read -r line; do yellow "$line"; done < ${work_dir}/url.txt
+            green "\nUUID已修改为：${purple}${new_uuid}${re} ${green}请手动更改节点UUID${re}\n"
             ;;
         3)  
             clear
-            green "\n1. www.joom.com\n2. www.stengg.com\n3. www.wedgehr.com\n4. www.cerebrium.ai\n5. www.nazhumi.com\n"
+            green "\n1. www.joom.com\n\n2. www.stengg.com\n\n3. www.wedgehr.com\n\n4. www.cerebrium.ai\n\n5. www.nazhumi.com\n"
             reading "\n请输入新的Reality伪装域名(可自定义输入,回车留空将使用默认1): " new_sni
-            if
+            if [ -z "$new_sni" ]; then    
+                new_sni="www.joom.com"
+            elif [[ "$new_sni" == "1" ]]; then
+                new_sni="www.joom.com"
+            elif [[ "$new_sni" == "2" ]]; then
+                new_sni="www.stengg.com"
+            elif [[ "$new_sni" == "3" ]]; then
+                new_sni="www.wedgehr.com"
+            elif [[ "$new_sni" == "4" ]]; then
+                new_sni="www.cerebrium.ai"
+            elif [[ "$new_sni" == "5" ]]; then
+                new_sni="www.nazhumi.com"
+            else
+                new_sni="$new_sni"
+            fi
+            jq --arg new_sni "$new_sni" '
+            (.inbounds[] | select(.type == "vless") | .tls.server_name) = $new_sni |
+            (.inbounds[] | select(.type == "vless") | .tls.reality.handshake.server) = $new_sni
+            ' "$config_dir" > "${config_dir}.tmp" && mv "${config_dir}.tmp" "$config_dir"
+            restart_singbox
+            sed -i "s/\(vless:\/\/[^\?]*\?\([^\&]*\&\)*sni=\)[^&]*/\1$new_sni/" $client_dir
+            while IFS= read -r line; do yellow "$line"; done < ${work_dir}/url.txt
+            echo ""
+            green "\nReality sni已修改为：${purple}${new_sni}${re} ${green}请手动更改节点sni域名${re}\n"
+            ;; 
+        0)  menu ;;
+        *)  red "无效的选项！" ;; 
+    esac
+}
+
+# singbox 管理
+manage_singbox() {
+    local singbox_status=$(check_singbox 2>/dev/null)
+    local singbox_installed=$?
+    
+    clear
+    echo ""
+    green "=== sing-box 管理 ===\n"
+    green "sing-box当前状态: $singbox_status\n"
+    green "1. 启动sing-box服务"
+    skyblue "-------------------"
+    green "2. 停止sing-box服务"
+    skyblue "-------------------"
+    green "3. 重启sing-box服务"
+    skyblue "-------------------"
+    purple "0. 返回主菜单"
+    skyblue "------------"
+    reading "\n请输入选择: " choice
+    case "${choice}" in
+        1) start_singbox ;;  
+        2) stop_singbox ;;
+        3) restart_singbox ;;
+        0) menu ;;
+        *) red "无效的选项！" && sleep 1 && manage_singbox;;
+    esac
+}
+
+# 查看节点信息
+check_nodes() {
+    while IFS= read -r line; do purple "${purple}$line"; done < ${work_dir}/url.txt
+}
+
+# 主菜单
+menu() {
+    singbox_status=$(check_singbox 2>/dev/null)
+    
+    clear
+    echo ""
+    green "Telegram群组: ${purple}https://t.me/eooceu${re}"
+    green "YouTube频道: ${purple}https://youtube.com/@eooce${re}\n"
+    purple "=== vless-reality 安装脚本 ===\n"
+    purple "singbox 状态: ${singbox_status}\n"
+    green "1. 安装sing-box"
+    red "2. 卸载sing-box"
+    echo "==============="
+    green "3. sing-box管理"
+    echo "==============="
+    green "4. 查看节点信息"
+    green "5. 修改节点配置"
+    echo "==============="
+    red "0. 退出脚本"
+    echo "==========="
+    reading "请输入选择(0-5): " choice
+    echo ""
+}
+
+# 捕获 Ctrl+C 退出信号
+trap 'red "已取消操作"; exit' INT
+
+# 主循环
+while true; do
+    menu
+    case "${choice}" in
+        1)  
+            check_singbox &>/dev/null; check_singbox=$?
+            if [ ${check_singbox} -eq 0 ]; then
+                yellow "sing-box 已经安装！\n"
+            else
+                manage_packages install jq openssl coreutils
+                install_singbox
+                if command_exists systemctl; then
+                    main_systemd_services
+                elif command_exists rc-update; then
+                    alpine_openrc_services
+                    change_hosts
+                    rc-service sing-box restart
+                else
+                    echo "Unsupported init system"
+                    exit 1 
+                fi
+
+                sleep 3
+                get_info
+                create_shortcut
+            fi
+            ;;
+        2) uninstall_singbox ;;
+        3) manage_singbox ;;
+        4) check_nodes ;;
+        5) change_config ;;
+        0) exit 0 ;;
+        *) red "无效的选项，请输入 0 到 5" ;;
+    esac
+    read -n 1 -s -r -p $'\033[1;91m按任意键返回...\033[0m'
+done
