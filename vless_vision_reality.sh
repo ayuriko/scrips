@@ -344,7 +344,7 @@ EOF
 
     # 生成 IPv4 链接
     if [ -n "$server_ipv4" ]; then
-        ipv4_url="vless://${uuid}@${server_ipv4}:${vless_port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=apps.apple.com&fp=chrome&pbk=${public_key}&type=tcp&headerType=none#${isp}_IPv4"
+        ipv4_url="vless://${uuid}@${server_ipv4}:${vless_port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=apps.apple.com&fp=chrome&pbk=${public_key}&type=tcp&headerType=none#${isp}"
         echo "$ipv4_url" >> ${work_dir}/url.txt
         green "IPv4 节点:\n"
         echo -e "${purple}${ipv4_url}${re}\n"
@@ -357,7 +357,7 @@ EOF
 
     # 生成 IPv6 链接
     if [ -n "$server_ipv6" ]; then
-        ipv6_url="vless://${uuid}@[${server_ipv6}]:${vless_port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=apps.apple.com&fp=chrome&pbk=${public_key}&type=tcp&headerType=none#${isp}_IPv6"
+        ipv6_url="vless://${uuid}@[${server_ipv6}]:${vless_port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=apps.apple.com&fp=chrome&pbk=${public_key}&type=tcp&headerType=none#${isp}"
         echo "$ipv6_url" >> ${work_dir}/url.txt
         green "IPv6 节点:\n"
         echo -e "${purple}${ipv6_url}${re}\n"
