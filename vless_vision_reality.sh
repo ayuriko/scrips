@@ -115,21 +115,12 @@ manage_packages() {
 
 # 获取ip
 get_realip() {
-    ip=$(curl -4 -sm 2 ip.sb)
-    ipv6() { curl -6 -sm 2 ip.sb; }
-    if [ -z "$ip" ]; then
-        echo "[$(ipv6)]"
-    elif curl -4 -sm 2 http://ipinfo.io/org | grep -qE 'Cloudflare|UnReal|AEZA|Andrei'; then
-        echo "[$(ipv6)]"
-    else
-        resp=$(curl -sm 8 "https://status.eooce.com/api/$ip" | jq -r '.status')
-        if [ "$resp" = "Available" ]; then
-            echo "$ip"
-        else
-            v6=$(ipv6)
-            [ -n "$v6" ] && echo "[$v6]" || echo "$ip"
-        fi
-    fi
+    ipv4=$(curl -4 -sm 3 ip.sb 2>/dev/null)
+    ipv6=$(curl -6 -sm 3 ip.sb 2>/dev/null)
+
+    # 导出为全局变量供其他函数使用
+    export server_ipv4="$ipv4"
+    export server_ipv6="$ipv6"
 }
 
 # 处理防火墙
@@ -338,19 +329,53 @@ EOF
 }
 
 # 生成节点信息
-get_info() {  
+get_info() {
     yellow "\nip检测中,请稍等...\n"
-    server_ip=$(get_realip)
+    get_realip
     clear
     isp=$(curl -s --max-time 2 https://speed.cloudflare.com/meta | awk -F\" '{print $26"-"$18}' | sed -e 's/ /_/g' || echo "vps")
 
+    # 生成配置文件
     cat > ${work_dir}/url.txt <<EOF
-vless://${uuid}@${server_ip}:${vless_port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=apps.apple.com&fp=chrome&pbk=${public_key}&type=tcp&headerType=none#${isp}
 EOF
 
     echo ""
-    while IFS= read -r line; do echo -e "${purple}$line"; done < ${work_dir}/url.txt
-    $work_dir/qrencode "$(cat ${work_dir}/url.txt)"
+    green "==================== 节点信息 ====================\n"
+
+    # 生成 IPv4 链接
+    if [ -n "$server_ipv4" ]; then
+        ipv4_url="vless://${uuid}@${server_ipv4}:${vless_port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=apps.apple.com&fp=chrome&pbk=${public_key}&type=tcp&headerType=none#${isp}_IPv4"
+        echo "$ipv4_url" >> ${work_dir}/url.txt
+        green "IPv4 节点:\n"
+        echo -e "${purple}${ipv4_url}${re}\n"
+    else
+        yellow "IPv4: VPS 不支持 IPv4\n"
+        echo "# IPv4: VPS 不支持 IPv4" >> ${work_dir}/url.txt
+    fi
+
+    echo ""
+
+    # 生成 IPv6 链接
+    if [ -n "$server_ipv6" ]; then
+        ipv6_url="vless://${uuid}@[${server_ipv6}]:${vless_port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=apps.apple.com&fp=chrome&pbk=${public_key}&type=tcp&headerType=none#${isp}_IPv6"
+        echo "$ipv6_url" >> ${work_dir}/url.txt
+        green "IPv6 节点:\n"
+        echo -e "${purple}${ipv6_url}${re}\n"
+    else
+        yellow "IPv6: VPS 不支持 IPv6\n"
+        echo "# IPv6: VPS 不支持 IPv6" >> ${work_dir}/url.txt
+    fi
+
+    echo ""
+    green "==================================================\n"
+
+    # 如果有可用的链接，显示二维码（使用第一个可用的链接）
+    if [ -n "$server_ipv4" ]; then
+        $work_dir/qrencode "$ipv4_url"
+    elif [ -n "$server_ipv6" ]; then
+        $work_dir/qrencode "$ipv6_url"
+    fi
+
     yellow "\n温馨提醒：需打开V2rayN或其他软件里的 "跳过证书验证"，或将节点的Insecure或TLS里设置为"true"\n"
 }
 
@@ -544,24 +569,49 @@ change_config() {
             sed -i '/"type": "vless"/,/listen_port/ s/"listen_port": [0-9]\+/"listen_port": '"$new_port"'/' $config_dir
             restart_singbox
             allow_port $new_port/tcp > /dev/null 2>&1
-            sed -i 's/\(vless:\/\/[^@]*@[^:]*:\)[0-9]\{1,\}/\1'"$new_port"'/' $client_dir
-            while IFS= read -r line; do yellow "$line"; done < ${work_dir}/url.txt
-            green "\nvless-reality端口已修改成：${purple}$new_port${re} ${green}请手动更改节点端口${re}\n"
+
+            # 更新所有链接中的端口（包括IPv4和IPv6）
+            sed -i 's/\(vless:\/\/[^@]*@[^:]*:\)[0-9]\{1,5\}/\1'"$new_port"'/g' $client_dir
+            sed -i 's/\(vless:\/\/[^@]*@\[[^]]*\]:\)[0-9]\{1,5\}/\1'"$new_port"'/g' $client_dir
+
+            echo ""
+            green "==================== 更新后的节点信息 ====================\n"
+            while IFS= read -r line; do
+                if [[ "$line" == \#* ]]; then
+                    yellow "$line"
+                else
+                    purple "$line"
+                fi
+            done < ${work_dir}/url.txt
+            green "\n========================================================\n"
+            green "\nvless-reality端口已修改成：${purple}$new_port${re}\n"
             ;;
         2)
             reading "\n请输入新的UUID: " new_uuid
             [ -z "$new_uuid" ] && new_uuid=$(cat /proc/sys/kernel/random/uuid)
             sed -i -E 's/"uuid": "([a-f0-9-]+)"/"uuid": "'"$new_uuid"'"/g' $config_dir
             restart_singbox
-            sed -i -E 's/(vless:\/\/)[^@]*(@.*)/\1'"$new_uuid"'\2/' $client_dir
-            while IFS= read -r line; do yellow "$line"; done < ${work_dir}/url.txt
-            green "\nUUID已修改为：${purple}${new_uuid}${re} ${green}请手动更改节点UUID${re}\n"
+
+            # 更新所有链接中的UUID（包括IPv4和IPv6）
+            sed -i -E 's/(vless:\/\/)[^@]*(@.*)/\1'"$new_uuid"'\2/g' $client_dir
+
+            echo ""
+            green "==================== 更新后的节点信息 ====================\n"
+            while IFS= read -r line; do
+                if [[ "$line" == \#* ]]; then
+                    yellow "$line"
+                else
+                    purple "$line"
+                fi
+            done < ${work_dir}/url.txt
+            green "\n========================================================\n"
+            green "\nUUID已修改为：${purple}${new_uuid}${re}\n"
             ;;
-        3)  
+        3)
             clear
             green "\n1. www.joom.com\n\n2. www.stengg.com\n\n3. www.wedgehr.com\n\n4. www.cerebrium.ai\n\n5. www.nazhumi.com\n"
             reading "\n请输入新的Reality伪装域名(可自定义输入,回车留空将使用默认1): " new_sni
-            if [ -z "$new_sni" ]; then    
+            if [ -z "$new_sni" ]; then
                 new_sni="www.joom.com"
             elif [[ "$new_sni" == "1" ]]; then
                 new_sni="www.joom.com"
@@ -581,10 +631,21 @@ change_config() {
             (.inbounds[] | select(.type == "vless") | .tls.reality.handshake.server) = $new_sni
             ' "$config_dir" > "${config_dir}.tmp" && mv "${config_dir}.tmp" "$config_dir"
             restart_singbox
-            sed -i "s/\(vless:\/\/[^\?]*\?\([^\&]*\&\)*sni=\)[^&]*/\1$new_sni/" $client_dir
-            while IFS= read -r line; do yellow "$line"; done < ${work_dir}/url.txt
+
+            # 更新所有链接中的SNI（包括IPv4和IPv6）
+            sed -i "s/\(vless:\/\/[^\?]*\?\([^\&]*\&\)*sni=\)[^&]*/\1$new_sni/g" $client_dir
+
             echo ""
-            green "\nReality sni已修改为：${purple}${new_sni}${re} ${green}请手动更改节点sni域名${re}\n"
+            green "==================== 更新后的节点信息 ====================\n"
+            while IFS= read -r line; do
+                if [[ "$line" == \#* ]]; then
+                    yellow "$line"
+                else
+                    purple "$line"
+                fi
+            done < ${work_dir}/url.txt
+            green "\n========================================================\n"
+            green "\nReality sni已修改为：${purple}${new_sni}${re}\n"
             ;; 
         0)  menu ;;
         *)  red "无效的选项！" ;; 
@@ -620,7 +681,21 @@ manage_singbox() {
 
 # 查看节点信息
 check_nodes() {
-    while IFS= read -r line; do purple "${purple}$line"; done < ${work_dir}/url.txt
+    if [ ! -f ${work_dir}/url.txt ]; then
+        red "未找到节点信息文件，请先安装 sing-box\n"
+        return
+    fi
+
+    echo ""
+    green "==================== 节点信息 ====================\n"
+    while IFS= read -r line; do
+        if [[ "$line" == \#* ]]; then
+            yellow "$line"
+        else
+            purple "$line"
+        fi
+    done < ${work_dir}/url.txt
+    green "\n==================================================\n"
 }
 
 # 主菜单
