@@ -629,8 +629,6 @@ menu() {
     
     clear
     echo ""
-    green "Telegram群组: ${purple}https://t.me/eooceu${re}"
-    green "YouTube频道: ${purple}https://youtube.com/@eooce${re}\n"
     purple "=== vless-reality 安装脚本 ===\n"
     purple "singbox 状态: ${singbox_status}\n"
     green "1. 安装sing-box"
