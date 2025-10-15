@@ -27,6 +27,7 @@ work_dir="/etc/sing-box"
 config_dir="${work_dir}/config.json"
 client_dir="${work_dir}/url.txt"
 export vless_port=${PORT:-$(shuf -i 1000-65000 -n 1)}
+export VPS_BRAND=""
 
 # 检查是否为root下运行
 [[ $EUID -ne 0 ]] && red "请在root用户下运行脚本" && exit 1
@@ -208,6 +209,10 @@ install_singbox() {
     curl -sLo "${work_dir}/sing-box" "https://$ARCH.ssss.nyc.mn/sbx"
     chown root:root ${work_dir} && chmod +x ${work_dir}/${server_name} ${work_dir}/qrencode
 
+    # 输入VPS品牌
+    reading "\n请输入VPS品牌名称 (例如：Vultr, DigitalOcean, 留空则不添加): " VPS_BRAND
+    [ -z "$VPS_BRAND" ] && VPS_BRAND=""
+
     # 生成随机UUID和密钥
     uuid=$(cat /proc/sys/kernel/random/uuid)
     output=$(/etc/sing-box/sing-box generate reality-keypair)
@@ -342,10 +347,18 @@ get_info() {
     yellow "\nip检测中,请稍等...\n"
     server_ip=$(get_realip)
     clear
+    
     isp=$(curl -s --max-time 2 https://speed.cloudflare.com/meta | awk -F\" '{print $26"-"$18}' | sed -e 's/ /_/g' || echo "vps")
 
+    # 构建节点名称
+    if [ -n "$VPS_BRAND" ]; then
+        node_name="${VPS_BRAND}-${isp}"
+    else
+        node_name="${isp}"
+    fi
+
     cat > ${work_dir}/url.txt <<EOF
-vless://${uuid}@${server_ip}:${vless_port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=apps.apple.com&fp=chrome&pbk=${public_key}&type=tcp&headerType=none#${isp}
+vless://${uuid}@${server_ip}:${vless_port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.iij.ad.jp&fp=chrome&pbk=${public_key}&type=tcp&headerType=none#${node_name}
 EOF
 
     echo ""
