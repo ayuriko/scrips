@@ -303,8 +303,22 @@ WantedBy=multi-user.target
 EOF
 
     systemctl daemon-reload
-    systemctl enable --now ss-rust
-    echo -e "${SUCCESS} systemd 服务已安装并启动：ss-rust"
+    systemctl enable ss-rust
+    
+    # 等待配置文件就绪
+    sleep 1
+    
+    systemctl start ss-rust
+    
+    # 检查服务状态
+    sleep 2
+    if systemctl is-active --quiet ss-rust; then
+        echo -e "${SUCCESS} systemd 服务已安装并启动：ss-rust"
+    else
+        echo -e "${ERROR} 服务启动失败，查看日志："
+        journalctl -u ss-rust -n 20 --no-pager
+        error_exit "服务启动失败"
+    fi
 }
 
 get_ip() {
@@ -315,6 +329,8 @@ get_ip() {
 }
 
 print_info() {
+    echo
+    echo -e "${INFO} 获取服务器 IP 地址..."
     get_ip
 
     echo
@@ -351,11 +367,16 @@ print_info() {
         if [[ "$IPV4" != "IPv4_Unavailable" ]]; then
             echo -e " IPv4 二维码:"
             echo "ss://${userinfo}@${IPV4}:${SS_PORT}#${NODE_NAME}" | qrencode -t UTF8
+            echo
         fi
         if [[ "$IPV6" != "IPv6_Unavailable" ]]; then
             echo -e " IPv6 二维码:"
             echo "ss://${userinfo}@[${IPV6}]:${SS_PORT}#${NODE_NAME}" | qrencode -t UTF8
+            echo
         fi
+    else
+        echo
+        echo -e "${YELLOW}提示：安装 qrencode 可显示二维码${PLAIN}"
     fi
 
     echo
@@ -368,7 +389,16 @@ print_info() {
     fi
 
     echo
-    echo -e "${SUCCESS} 已完成安装并输出节点信息。"
+    echo -e "${YELLOW}=== 管理命令 ===${PLAIN}"
+    echo -e " 查看状态: systemctl status ss-rust"
+    echo -e " 启动服务: systemctl start ss-rust"
+    echo -e " 停止服务: systemctl stop ss-rust"
+    echo -e " 重启服务: systemctl restart ss-rust"
+    echo -e " 查看日志: journalctl -u ss-rust -f"
+    echo -e " 配置文件: ${CONFIG_PATH}"
+
+    echo
+    echo -e "${SUCCESS} 安装完成！"
 }
 
 #############################################
