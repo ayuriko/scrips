@@ -141,8 +141,8 @@ download_ss() {
 
 ask_node_name() {
     echo
-    read -rp "请输入节点名称（用于客户端展示，例如 HK-ORACLE_CLOUD）: " NODE_NAME
-    [[ -z "$NODE_NAME" ]] && NODE_NAME="HK-ORACLE_CLOUD"
+    read -rp "请输入节点名称（格式：地区-IDC，例如 TW-ORACLE）: " NODE_NAME
+    [[ -z "$NODE_NAME" ]] && NODE_NAME="TW-ORACLE"
     echo -e "${INFO} 节点名称：${NODE_NAME}"
 }
 
@@ -335,23 +335,23 @@ print_info() {
     if [[ "$IPV4" != "IPv4_Unavailable" ]]; then
         local ss_url_v4
         ss_url_v4="ss://${userinfo}@${IPV4}:${SS_PORT}#${NODE_NAME}"
-        echo -e " IPv4: ${ss_url_v4}"
+        echo -e " ${ss_url_v4}"
     fi
     if [[ "$IPV6" != "IPv6_Unavailable" ]]; then
         local ss_url_v6
         ss_url_v6="ss://${userinfo}@[${IPV6}]:${SS_PORT}#${NODE_NAME}"
-        echo -e " IPv6: ${ss_url_v6}"
+        echo -e " ${ss_url_v6}"
     fi
 
     if command -v qrencode >/dev/null 2>&1; then
         echo
         echo -e "${YELLOW}=== 二维码（终端显示）===${PLAIN}"
         if [[ "$IPV4" != "IPv4_Unavailable" ]]; then
-            echo -e " IPv4:"
+            echo -e " IPv4 二维码:"
             echo "ss://${userinfo}@${IPV4}:${SS_PORT}#${NODE_NAME}" | qrencode -t UTF8
         fi
         if [[ "$IPV6" != "IPv6_Unavailable" ]]; then
-            echo -e " IPv6:"
+            echo -e " IPv6 二维码:"
             echo "ss://${userinfo}@[${IPV6}]:${SS_PORT}#${NODE_NAME}" | qrencode -t UTF8
         fi
     fi
