@@ -83,6 +83,49 @@ detect_arch() {
     echo -e "${INFO} 检测到架构: ${OS_ARCH}"
 }
 
+# ===== 新增：检测是否已经安装过 =====
+check_installed() {
+    local has_service has_binary
+    has_service=0
+    has_binary=0
+
+    if command -v systemctl >/dev/null 2>&1; then
+        if systemctl list-unit-files 2>/dev/null | grep -q "^ss-rust.service"; then
+            has_service=1
+        fi
+    fi
+
+    if [[ -x "${BINARY_PATH}" ]]; then
+        has_binary=1
+    fi
+
+    if [[ "${has_service}" -eq 1 || "${has_binary}" -eq 1 ]]; then
+        echo
+        echo -e "${YELLOW}[提示] 检测到本机已经安装过 ss-rust：${PLAIN}"
+        [[ "${has_service}" -eq 1 ]] && echo -e " - 已存在 systemd 服务：ss-rust"
+        [[ "${has_binary}" -eq 1 ]] && echo -e " - 已存在二进制文件：${BINARY_PATH}"
+
+        if [[ "${has_service}" -eq 1 ]] && command -v systemctl >/dev/null 2>&1; then
+            echo
+            echo -e "${INFO} 当前服务状态（如存在）："
+            systemctl status ss-rust --no-pager -n 0 || true
+        fi
+
+        echo
+        read -rp "是否继续并覆盖原有安装？[y/N]: " ans
+        [[ -z "$ans" ]] && ans="n"
+        case "$ans" in
+            [Yy]*)
+                echo -e "${INFO} 将继续执行安装并覆盖旧版本..."
+                ;;
+            *)
+                echo -e "${INFO} 已取消安装。"
+                exit 0
+                ;;
+        esac
+    fi
+}
+
 install_dependencies() {
     echo -e "${INFO} 安装依赖：curl / xz / tar / qrencode（二维码可选）..."
     case "$OS_TYPE" in
@@ -284,6 +327,15 @@ EOF
 install_service() {
     echo
     echo -e "${INFO} 写入 systemd 服务到 ${SERVICE_FILE} ..."
+
+    # 如果已经有旧服务，先尝试停止
+    if command -v systemctl >/dev/null 2>&1; then
+        if systemctl list-unit-files 2>/dev/null | grep -q "^ss-rust.service"; then
+            echo -e "${INFO} 检测到已存在 ss-rust 服务，尝试停止旧服务..."
+            systemctl stop ss-rust 2>/dev/null || true
+        fi
+    fi
+
     cat > "${SERVICE_FILE}" <<EOF
 [Unit]
 Description=Shadowsocks Rust Server
@@ -408,6 +460,7 @@ print_info() {
 check_root
 detect_os
 detect_arch
+check_installed            # ★ 新增：第二次运行前检测是否已安装
 install_dependencies
 
 echo -e "${INFO} 开始配置 Shadowsocks Rust 节点 ..."
