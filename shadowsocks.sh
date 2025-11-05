@@ -139,11 +139,13 @@ download_ss() {
     echo -e "${SUCCESS} Shadowsocks Rust 已安装：${BINARY_PATH}"
 }
 
-ask_node_name() {
-    echo
-    read -rp "请输入节点名称（格式：地区-IDC，例如 TW-ORACLE）: " NODE_NAME
-    [[ -z "$NODE_NAME" ]] && NODE_NAME="TW-ORACLE"
-    echo -e "${INFO} 节点名称：${NODE_NAME}"
+auto_node_name() {
+    echo -e "${INFO} 正在自动检测节点信息..."
+    
+    # 使用与 vless-reality 脚本相同的方式获取 ISP 信息
+    NODE_NAME=$(curl -s --max-time 3 https://speed.cloudflare.com/meta | awk -F\" '{print $26"-"$18}' | sed -e 's/ /_/g' || echo "vps")
+    
+    echo -e "${INFO} 自动检测节点名称：${NODE_NAME}"
 }
 
 ask_port() {
@@ -379,7 +381,7 @@ detect_arch
 install_dependencies
 
 echo -e "${INFO} 开始配置 Shadowsocks Rust 节点 ..."
-ask_node_name
+auto_node_name
 ask_port
 ask_method
 ask_password
